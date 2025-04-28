@@ -10,7 +10,6 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   int selectedIndex = 0;
-
   void onItemTapped(int index) {
     setState(() {
       selectedIndex = index;

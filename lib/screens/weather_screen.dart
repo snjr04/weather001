@@ -31,16 +31,15 @@ class WeatherScreenState extends State<WeatherScreen> {
     });
   }
 
-  Future<void> initializeWeather() async {
+  Future initializeWeather() async {
     setState(() => isLoading = true);
     await weatherApi.initialize();
     await fetchWeatherData();
   }
 
-  Future<void> fetchWeatherData() async {
+  Future fetchWeatherData() async {
     try {
       final data = weatherApi.getWeatherText();
-
       if (mounted) {
         setState(() {
           weatherInfo = formatWeatherData(data);
@@ -69,7 +68,7 @@ class WeatherScreenState extends State<WeatherScreen> {
     return rawData;
   }
 
-  Future<void> refreshManually() async {
+  Future refreshManually() async {
     setState(() {
       isLoading = true;
       weatherInfo = 'Обновление данных...';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:testapp/services/currency_api.dart';
-import 'package:testapp/model/currency_model.dart'; // чтобы видеть RateEntry и CurrencyRates
+import 'package:testapp/model/currency_model.dart';
 
 class MoneyPage extends StatefulWidget {
   const MoneyPage({super.key});
@@ -43,14 +44,14 @@ class MoneyPageState extends State<MoneyPage> {
     });
   }
 
-  Future<void> fetchRates() async {
+  Future fetchRates() async {
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
 
     try {
-      final CurrencyRates fetchedRates = await CurrencyApi().fetchCurrencyRates();
+      final CurrencyRates fetchedRates = await CurrencyApi().getCurrentRates();
       final List<CurrencyRate> updatedRates = fetchedRates.rates
           .map((entry) => CurrencyRate(currency: entry.currency, rate: entry.value))
           .toList();
@@ -121,6 +122,9 @@ class MoneyPageState extends State<MoneyPage> {
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 20),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
               decoration: InputDecoration(
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 filled: true,
@@ -189,8 +193,8 @@ class MoneyPageState extends State<MoneyPage> {
     }
 
     final double rate = rates
-        .firstWhere((r) => r.currency == selectedCurrency, orElse: () => CurrencyRate(currency: selectedCurrency, rate: 0.0))
-        .rate;
+        .where((r) => r.currency == selectedCurrency)
+        .firstOrNull?.rate ?? 0.0;
 
     final String converted = (amount * rate).toStringAsFixed(2);
 

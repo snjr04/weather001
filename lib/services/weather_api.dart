@@ -21,7 +21,7 @@ class WeatherApi {
   static const lonKey = 'lon';
   static const timeKey = 'last_time';
 
-  Future<void> initialize() async {
+  Future initialize() async {
     try {
       await loadFromPrefs();
       await fetchWeather();
@@ -31,25 +31,26 @@ class WeatherApi {
     }
   }
 
+  void startAutoUpdate()
+  {
+    updateTimer?.cancel();
+    updateTimer = Timer.periodic(const Duration(minutes: 10), (_){
+      fetchWeather().then((_){
+      }).catchError((e){
+        weatherData = 'Ошибка автобновлении: $e';
+      });
+    });
+  }
+
   String getWeatherText() {
     return weatherData ?? 'Данные еще не загружены.';
   }
 
-  void startAutoUpdate() {
-    updateTimer?.cancel();
-    updateTimer = Timer.periodic(const Duration(minutes: 10), (_) async {
-      try {
-        await fetchWeather();
-      } catch (e) {
-        weatherData = 'Ошибка при автообновлении: $e';
-      }
-    });
-  }
-
-  Future<void> loadFromPrefs() async {
+  Future loadFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       weatherData = prefs.getString(weatherKey);
+
       final lat = prefs.getDouble(latKey);
       final lon = prefs.getDouble(lonKey);
       final timeStr = prefs.getString(timeKey);
@@ -59,25 +60,31 @@ class WeatherApi {
           latitude: lat,
           longitude: lon,
           timestamp: DateTime.now(),
-          accuracy: 0,
-          altitude: 0,
-          heading: 0,
-          speed: 0,
-          speedAccuracy: 0,
-          altitudeAccuracy: 0,
-          headingAccuracy: 0,
+          accuracy: 1.0,
+          altitude: 0.0,
+          heading: 0.0,
+          speed: 0.0,
+          speedAccuracy: 1.0,
+          altitudeAccuracy: 1.0,
+          headingAccuracy: 1.0,
+          floor: null,
+          isMocked: false,
         );
+      } else {
+        position = null;
       }
 
       if (timeStr != null) {
         lastRequestTime = DateTime.tryParse(timeStr);
+      } else {
+        lastRequestTime = null;
       }
     } catch (e) {
       throw Exception('Ошибка загрузки из SharedPreferences: $e');
     }
   }
 
-  Future<void> _saveToPrefs() async {
+  Future saveToPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(weatherKey, weatherData ?? '');
@@ -93,7 +100,7 @@ class WeatherApi {
     }
   }
 
-  Future<void> fetchWeather() async {
+  Future fetchWeather() async {
     try {
       final now = DateTime.now();
       if (lastRequestTime != null &&
@@ -101,36 +108,19 @@ class WeatherApi {
           weatherData != null) {
         return;
       }
-
-      await _updateLocation();
-
-      if (position == null) {
-        weatherData = 'Не удалось получить координаты.';
-        return;
-      }
-
+      await updateLocation();
       final apiKey = dotenv.env['WEATHER_API_KEY'] ?? '';
-      if (apiKey.isEmpty) {
-        throw Exception('API ключ не найден');
-      }
-
       final url = dotenv.env['WEATHER_API_URL'] ?? '';
-      if (url.isEmpty) {
-        throw Exception('URL API не найден');
-      }
-
-      final apiUrl =
-          '$url?lat=${position!.latitude}&lon=${position!.longitude}&appid=$apiKey&units=metric&lang=ru';
+      final apiUrl = '$url?lat=${position!.latitude}&lon=${position!.longitude}&appid=$apiKey&units=metric&lang=ru';
 
       final response = await http.get(Uri.parse(apiUrl)).timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final weather = WeatherModel.fromJson(data);
-
         weatherData = 'Город: ${weather.city}\nПогода: ${weather.description}, Температура: ${weather.temp}°C';
         lastRequestTime = now;
-        await _saveToPrefs();
+        await saveToPrefs();
+
       } else {
         weatherData = 'Ошибка загрузки данных о погоде. Код: ${response.statusCode}';
       }
@@ -140,15 +130,13 @@ class WeatherApi {
     }
   }
 
-  Future<void> _updateLocation() async {
+  Future updateLocation() async {
     try {
       if (position != null) return;
-
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         throw Exception('Служба геолокации отключена');
       }
-
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
