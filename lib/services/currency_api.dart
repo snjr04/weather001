@@ -7,16 +7,16 @@ import 'package:testapp/model/currency_model.dart';
 
 class CurrencyApi {
   static const int refreshIntervalMinutes = 10;
+  static const Duration refreshInterval = Duration(minutes: refreshIntervalMinutes);
 
   CurrencyRates? cachedRates;
-  int lastUpdateTimestamp = 0;
+  DateTime? lastUpdate;
   Timer? autoRefreshTimer;
-  bool isFetching = false;
 
   CurrencyRates? get currentRates => cachedRates;
 
   void initialize() {
-    loadInitialData();
+    fetchAndUpdateRates();
     startAutoRefresh();
   }
 
@@ -27,66 +27,38 @@ class CurrencyApi {
     return cachedRates ?? await fetchAndUpdateRates();
   }
 
-  Future<CurrencyRates> fetchAndSaveRates() async {
-    return await fetchAndUpdateRates();
-  }
-
-  Future loadInitialData() async {
-    try {
-      await fetchAndUpdateRates();
-    } catch (e) {
-      debugPrint('Initial load error: $e');
-    }
-  }
-
   Future<CurrencyRates> fetchAndUpdateRates() async {
-    if (isFetching) return cachedRates ?? createEmptyRates();
-    isFetching = true;
-
     try {
       debugPrint('Fetching new currency rates...');
       final response = await http.get(Uri.parse(
           '${dotenv.env['EXCHANGE_API_URL']}?app_id=${dotenv.env['EXCHANGE_API_KEY']}&base=USD'));
 
       if (response.statusCode != 200) {
-        throw Exception('API request failed: ${response.statusCode}');
+        throw Exception('Ошибка 200: ${response.statusCode}');
       }
 
       final rawData = json.decode(response.body);
       validateResponseStructure(rawData);
 
-      cachedRates = CurrencyRates(//копирования данных
-        base: rawData['base'].toString(),// базовая валюта
-        date: DateTime.fromMillisecondsSinceEpoch(rawData['timestamp'] * 1000),//переобразуется в милисекунды
-        rates: (rawData['rates'] as Map<String, dynamic>)//данные переобразуется в ключ значение
-            .entries//переобразует в ключ значение
-            .where((e) => e.value is num)//фильтр для num
-            .map((e) => RateEntry(e.key, (e.value as num).toDouble()))// num to double
-            .toList(),
-      );
-
-      lastUpdateTimestamp = DateTime.now().millisecondsSinceEpoch;
+      cachedRates = CurrencyRates.fromJson(rawData);
+      lastUpdate = DateTime.now();
       debugPrint('Rates updated successfully');
       return cachedRates!;
     } catch (e) {
-      debugPrint('Error updating rates: $e');
+      debugPrint('Ошибка обновления rates: $e');
       return cachedRates ?? createEmptyRates();
-    } finally {
-      isFetching = false;
     }
   }
 
   bool get shouldRefreshData {
     if (cachedRates == null) return true;
-    final minutesSinceLastUpdate =
-        (DateTime.now().millisecondsSinceEpoch - lastUpdateTimestamp) / (1000 * 60);
-    return minutesSinceLastUpdate >= refreshIntervalMinutes;
+    return DateTime.now().difference(lastUpdate!) >= refreshInterval;
   }
 
   void validateResponseStructure(Map<String, dynamic> rawData) {
     const requiredKeys = {'base', 'rates', 'timestamp'};
     if (requiredKeys.any((key) => !rawData.containsKey(key))) {
-      throw Exception('Invalid API response structure');
+      throw Exception('Ошибка получении данных');
     }
   }
 
@@ -95,19 +67,16 @@ class CurrencyApi {
       base: 'USD',
       date: DateTime.now(),
       rates: [],
-
     );
   }
 
   void startAutoRefresh() {
     autoRefreshTimer?.cancel();
     autoRefreshTimer = Timer.periodic(
-      const Duration(minutes: refreshIntervalMinutes),
+      refreshInterval,
           (_) => fetchAndUpdateRates(),
     );
   }
 
-  void dispose() {
-    autoRefreshTimer?.cancel();
-  }
 }
+

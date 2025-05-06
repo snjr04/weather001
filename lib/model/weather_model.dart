@@ -1,5 +1,3 @@
-
-
 class WeatherModel {
   final String city;
   final String description;

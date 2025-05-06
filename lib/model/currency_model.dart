@@ -3,14 +3,6 @@ class RateEntry {
   final double value;
 
   RateEntry(this.currency, this.value);
-
-  Map<String, dynamic> toJson() {
-    return {
-      'currency': currency,
-      'value': value,
-    };
-  }
-
   factory RateEntry.fromJson(Map<String, dynamic> json) {
     return RateEntry(
       json['currency'],
@@ -31,30 +23,16 @@ class CurrencyRates {
   });
 
   factory CurrencyRates.fromJson(Map<String, dynamic> json) {
-    List<RateEntry> rateList = [];
-
-    final ratesJson = json['rates'] as Map<String, dynamic>;
-    for (final key in ratesJson.keys) {
-      final value = ratesJson[key];
-      if (value is num) {
-        rateList.add(RateEntry(key, value.toDouble()));
-      }
-    }
+    final rateList = (json['rates'] as Map<String, dynamic>)
+        .entries
+        .where((e) => e.value is num)
+        .map((e) => RateEntry(e.key, (e.value as num).toDouble()))
+        .toList();
 
     return CurrencyRates(
       base: json['base'],
-      date: DateTime.parse(json['date']),
+      date: DateTime.fromMillisecondsSinceEpoch(json['timestamp'] * 1000),
       rates: rateList,
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'base': base,
-      'date': DateTime.now().millisecondsSinceEpoch,
-      'rates': {
-        for (final rate in rates) rate.currency: rate.value,
-      },
-    };
   }
 }

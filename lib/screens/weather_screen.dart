@@ -39,7 +39,7 @@ class WeatherScreenState extends State<WeatherScreen> {
 
   Future fetchWeatherData() async {
     try {
-      final data = weatherApi.getWeatherText();
+      final data = weatherApi.weatherData ?? 'Данные еще не загружены.';
       if (mounted) {
         setState(() {
           weatherInfo = formatWeatherData(data);

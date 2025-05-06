@@ -10,17 +10,10 @@ class MoneyPage extends StatefulWidget {
   MoneyPageState createState() => MoneyPageState();
 }
 
-class CurrencyRate {
-  final String currency;
-  final double rate;
-
-  CurrencyRate({required this.currency, required this.rate});
-}
-
 class MoneyPageState extends State<MoneyPage> {
   final TextEditingController amountController = TextEditingController();
-  List<CurrencyRate> rates = [];
-  bool isLoading = false;
+  final CurrencyApi currencyApi = CurrencyApi();
+  List<RateEntry>? rates;
   String errorMessage = '';
   double amount = 0.0;
   String selectedCurrency = 'USD';
@@ -28,58 +21,50 @@ class MoneyPageState extends State<MoneyPage> {
   @override
   void initState() {
     super.initState();
+    currencyApi.initialize();
     fetchRates();
-    amountController.addListener(onAmountChanged);
   }
 
   @override
   void dispose() {
     amountController.dispose();
+    currencyApi.dispose();
     super.dispose();
   }
 
-  void onAmountChanged() {
-    setState(() {
-      amount = double.tryParse(amountController.text) ?? 0.0;
-    });
+  Future fetchRates() async {
+    setState(() => errorMessage = '');
+    try {
+      final newRates = await currencyApi.getCurrentRates();
+      setState(() => rates = newRates.rates);
+    } catch (e) {
+      setState(() => errorMessage = 'Не удалось загрузить курсы валют: $e');
+    }
   }
 
-  Future fetchRates() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = '';
-    });
+  double getCurrentRate() {
+    return rates?.firstWhere(
+          (r) => r.currency == selectedCurrency,
+      orElse: () => RateEntry(selectedCurrency, 0.0),
+    ).value ?? 0.0;
+  }
 
-    try {
-      final CurrencyRates fetchedRates = await CurrencyApi().getCurrentRates();
-      final List<CurrencyRate> updatedRates = fetchedRates.rates
-          .map((entry) => CurrencyRate(currency: entry.currency, rate: entry.value))
-          .toList();
-
-      final double kgsRate = updatedRates
-          .firstWhere((rate) => rate.currency == 'KGS', orElse: () => CurrencyRate(currency: 'KGS', rate: 1.0))
-          .rate;
-
-      final List<CurrencyRate> convertedRates = updatedRates.map((rate) {
-        return CurrencyRate(currency: rate.currency, rate: rate.rate / kgsRate);
-      }).toList();
-
-      setState(() {
-        rates = convertedRates;
-      });
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Ошибка загрузки курсов: $e';
-      });
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
+  Widget buildStyledCard({required Widget child}) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: child,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final rate = getCurrentRate();
+    final converted = (amount * rate).toStringAsFixed(2);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Конвертер валют'),
@@ -96,124 +81,92 @@ class MoneyPageState extends State<MoneyPage> {
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            buildAmountInputCard(),
+            buildStyledCard(
+              child: Column(
+                children: [
+                  const Text('Введите сумму', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountController,
+                    onChanged: (value) {
+                      setState(() => amount = double.tryParse(value) ?? 0.0);
+                    },
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 20),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                    ],
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      hintText: '0.00',
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
-            buildCurrencyDropdownCard(),
+            buildStyledCard(
+              child: Column(
+                children: [
+                  const Text('Выберите валюту:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedCurrency,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    items: rates?.map((rate) {
+                      return DropdownMenuItem<String>(
+                        value: rate.currency,
+                        child: Text(rate.currency),
+                      );
+                    }).toList() ?? [],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => selectedCurrency = value);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
-            Expanded(child: buildRateDisplay()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildAmountInputCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            const Text('Введите сумму', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-              ],
-              decoration: InputDecoration(
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                filled: true,
-                fillColor: Colors.grey[50],
-                hintText: '0.00',
-                contentPadding: const EdgeInsets.all(12),
+            Expanded(
+              child: errorMessage.isNotEmpty
+                  ? Center(
+                child: Text(errorMessage, style: const TextStyle(color: Colors.red, fontSize: 16)),
+              )
+                  : rates == null
+                  ? const Center(
+                child: Text('Курсы валют не загружены', style: TextStyle(fontSize: 16)),
+              )
+                  : Center(
+                child: buildStyledCard(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '1 KGS = ${rate.toStringAsFixed(6)} $selectedCurrency',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '$amount KGS = $converted $selectedCurrency',
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildCurrencyDropdownCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            const Text('Выберите валюту:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: selectedCurrency,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                filled: true,
-                fillColor: Colors.grey[50],
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              items: rates.map((rate) {
-                return DropdownMenuItem<String>(
-                  value: rate.currency,
-                  child: Text(rate.currency),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null) {
-                  setState(() {
-                    selectedCurrency = newValue;
-                  });
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildRateDisplay() {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (errorMessage.isNotEmpty) {
-      return Center(
-        child: Text(errorMessage, style: const TextStyle(color: Colors.red, fontSize: 16)),
-      );
-    }
-
-    if (rates.isEmpty) {
-      return const Center(child: Text('Курсы валют не загружены', style: TextStyle(fontSize: 16)));
-    }
-
-    final double rate = rates
-        .where((r) => r.currency == selectedCurrency)
-        .firstOrNull?.rate ?? 0.0;
-
-    final String converted = (amount * rate).toStringAsFixed(2);
-
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('1 KGS = ${rate.toStringAsFixed(6)} $selectedCurrency',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Text('$amount KGS = $converted $selectedCurrency',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue)),
-            ],
-          ),
         ),
       ),
     );

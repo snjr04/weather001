@@ -6,6 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:testapp/model/weather_model.dart';
 
+
+Position? position;
+String latKey = 'lat';
+String lonKey = 'lon';
+
+
 class WeatherApi {
   static final WeatherApi instance = WeatherApi.internal();
   factory WeatherApi() => instance;
@@ -17,8 +23,7 @@ class WeatherApi {
   DateTime? lastRequestTime;
 
   static const weatherKey = 'weather_data';
-  static const latKey = 'lat';
-  static const lonKey = 'lon';
+
   static const timeKey = 'last_time';
 
   Future initialize() async {
@@ -42,43 +47,42 @@ class WeatherApi {
     });
   }
 
-  String getWeatherText() {
-    return weatherData ?? 'Данные еще не загружены.';
-  }
-
   Future loadFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       weatherData = prefs.getString(weatherKey);
 
+      final timeStr = prefs.getString(timeKey);
+      lastRequestTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
+
+      // Если прошло больше 10 минут - сбрасываем данные
+      if (lastRequestTime != null &&
+          DateTime.now().difference(lastRequestTime!).inMinutes >= 10) {
+        weatherData = null;
+        position = null;
+        lastRequestTime = null;
+        return;
+      }
+
       final lat = prefs.getDouble(latKey);
       final lon = prefs.getDouble(lonKey);
-      final timeStr = prefs.getString(timeKey);
 
-      if (lat != null && lon != null) {
-        position = Position(
-          latitude: lat,
-          longitude: lon,
-          timestamp: DateTime.now(),
-          accuracy: 1.0,
-          altitude: 0.0,
-          heading: 0.0,
-          speed: 0.0,
-          speedAccuracy: 1.0,
-          altitudeAccuracy: 1.0,
-          headingAccuracy: 1.0,
-          floor: null,
-          isMocked: false,
-        );
-      } else {
-        position = null;
-      }
-
-      if (timeStr != null) {
-        lastRequestTime = DateTime.tryParse(timeStr);
-      } else {
-        lastRequestTime = null;
-      }
+      position = (lat != null && lon != null)
+          ? Position(
+        latitude: lat,
+        longitude: lon,
+        timestamp: DateTime.now(),
+        accuracy: 1.0,
+        altitude: 0.0,
+        heading: 0.0,
+        speed: 0.0,
+        speedAccuracy: 1.0,
+        altitudeAccuracy: 1.0,
+        headingAccuracy: 1.0,
+        floor: null,
+        isMocked: false,
+      )
+          : null;
     } catch (e) {
       throw Exception('Ошибка загрузки из SharedPreferences: $e');
     }
@@ -87,14 +91,15 @@ class WeatherApi {
   Future saveToPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(weatherKey, weatherData ?? '');
-      if (position != null) {
-        await prefs.setDouble(latKey, position!.latitude);
-        await prefs.setDouble(lonKey, position!.longitude);
-      }
-      if (lastRequestTime != null) {
-        await prefs.setString(timeKey, lastRequestTime!.toIso8601String());
-      }
+      await Future.wait([
+        prefs.setString(weatherKey, weatherData ?? ''),
+        if (position != null) ...[
+          prefs.setDouble(latKey, position!.latitude),
+          prefs.setDouble(lonKey, position!.longitude),
+        ],
+        if (lastRequestTime != null)
+          prefs.setString(timeKey, lastRequestTime!.toIso8601String()),
+      ]);
     } catch (e) {
       throw Exception('Ошибка сохранения в SharedPreferences: $e');
     }
@@ -162,3 +167,45 @@ class WeatherApi {
     updateTimer = null;
   }
 }
+
+// Future loadFromPrefs() async
+// {
+//   try{
+//   DateTime? lastRequestTime;
+//   String timeKey;
+//
+//   final prefs = await SharedPreferences.getInstance();
+//   final timeStr = prefs.getString(timeKey);
+//   lastRequestTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
+//   if (lastRequestTime != null &&
+//       DateTime.now().difference(lastRequestTime!).inMinutes >= 10) {
+//     const weatherData = null;
+//     const position = null;
+//     lastRequestTime = null;
+//     return;
+//   }
+//
+//   final lat = prefs.getDouble(latKey);
+//   final lon = prefs.getDouble(lonKey);
+//
+//   position = (lat != null && lon != null)
+//       ? Position(
+//     latitude: lat,
+//     longitude: lon,
+//     timestamp: DateTime.now(),
+//     accuracy: 1.0,
+//     altitude: 0.0,
+//     heading: 0.0,
+//     speed: 0.0,
+//     speedAccuracy: 1.0,
+//     altitudeAccuracy: 1.0,
+//     headingAccuracy: 1.0,
+//     floor: null,
+//     isMocked: false,
+//   )
+//       : null;
+// } catch (e) {
+// throw Exception('Ошибка загрузки из SharedPreferences: $e');
+// }
+//   return position;
+// }
